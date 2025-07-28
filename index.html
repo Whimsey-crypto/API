@@ -8,7 +8,7 @@
         body {
             margin: 0;
             padding: 20px;
-            background: #1a1a1a;
+            background: transparent;
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             color: #ffffff;
             display: flex;
@@ -24,7 +24,9 @@
             border: 2px solid #4169e1;
             border-radius: 8px;
             overflow: hidden;
-            position: relative;
+            position: absolute;
+            top: 100px;
+            left: 100px;
         }
 
         .hud-header {
@@ -35,6 +37,7 @@
             font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 1px;
+            cursor: move;
         }
 
         .hud-content {
@@ -85,6 +88,22 @@
             box-shadow: 0 0 8px rgba(65, 105, 225, 0.5);
         }
 
+        .refresh-btn {
+            margin-top: 4px;
+            padding: 4px 6px;
+            background-color: #4169e1;
+            border: none;
+            color: white;
+            font-size: 10px;
+            text-transform: uppercase;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .refresh-btn:hover {
+            background-color: #2748a5;
+        }
+
         .section-title {
             font-size: 10px;
             color: #4169e1;
@@ -125,9 +144,9 @@
             align-items: center;
             justify-content: center;
             font-style: italic;
+            text-align: center;
         }
 
-        /* Demo text to show multiple windows could fit */
         .demo-text {
             position: absolute;
             top: 10px;
@@ -142,16 +161,17 @@
 </head>
 <body>
     <div class="demo-text">Admin HUD Element (8 can fit on screen)</div>
-    
-    <div class="hud-window">
-        <div class="hud-header">Player Admin Tool</div>
+
+    <div class="hud-window" id="hudWindow">
+        <div class="hud-header" id="hudHeader">Player Admin Tool</div>
         <div class="hud-content">
             <div class="left-half">
                 <div class="uid-section">
                     <div class="uid-label">User ID</div>
                     <input type="text" class="uid-input" placeholder="Enter UID..." />
+                    <button class="refresh-btn">Refresh</button>
                 </div>
-                
+
                 <div class="economy-section">
                     <div class="section-title">Economy</div>
                     <div class="economy-item">
@@ -164,62 +184,96 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="right-half">
                 <div class="section-title">Inventory</div>
-                <div class="inventory-area">
-                    Empty
-                </div>
+                <div class="inventory-area">Empty</div>
             </div>
         </div>
     </div>
-</body>
-</html>
 
-<script>
-const privateKey = 'yoGb24Kdi5CGVYtQkQxKHlIRyJc0UWH0uG4Tm2M'; // Replace with your real key
+    <script>
+        const privateKey = 'your_private_key_here'; // ← Replace this
 
-document.querySelector('.uid-input').addEventListener('change', async function() {
-    const uid = this.value.trim();
-    if (!uid) return;
+        const input = document.querySelector('.uid-input');
+        const refreshBtn = document.querySelector('.refresh-btn');
+        const moneyEl = document.querySelectorAll('.economy-item')[0].querySelector('.economy-value');
+        const bankEl = document.querySelectorAll('.economy-item')[1].querySelector('.economy-value');
+        const inventoryEl = document.querySelector('.inventory-area');
 
-    try {
-        // Fetch economy
-        const wealthResp = await fetch(`https://tycoon-2epova.users.cfx.re/wealth/${uid}`, {
-            headers: {
-                'X-Tycoon-Key': privateKey
+        async function fetchPlayerData(uid) {
+            if (!uid) return;
+
+            moneyEl.textContent = '...';
+            bankEl.textContent = '...';
+            inventoryEl.textContent = 'Loading...';
+
+            try {
+                const wealthResp = await fetch(`https://tycoon-2epova.users.cfx.re/wealth/${uid}`, {
+                    headers: { 'X-Tycoon-Key': privateKey }
+                });
+                const wealth = await wealthResp.json();
+
+                moneyEl.textContent = `$${wealth.wallet?.toLocaleString() ?? 0}`;
+                bankEl.textContent = `$${wealth.bank?.toLocaleString() ?? 0}`;
+
+                const dataResp = await fetch(`https://tycoon-2epova.users.cfx.re/data/${uid}`, {
+                    headers: { 'X-Tycoon-Key': privateKey }
+                });
+                const data = await dataResp.json();
+
+                const inventory = data.data?.inventory || {};
+
+                if (Object.keys(inventory).length === 0) {
+                    inventoryEl.textContent = 'Empty';
+                } else {
+                    const items = Object.entries(inventory).map(([item, info]) => {
+                        return `${item} x${info.amount}`;
+                    }).join(', ');
+                    inventoryEl.textContent = items;
+                }
+
+            } catch (err) {
+                console.error(err);
+                moneyEl.textContent = '$0';
+                bankEl.textContent = '$0';
+                inventoryEl.textContent = 'Error fetching data';
             }
-        });
-
-        if (!wealthResp.ok) throw new Error('Failed to fetch wealth');
-        const wealth = await wealthResp.json();
-
-        document.querySelectorAll('.economy-item')[0].querySelector('.economy-value').textContent = `$${wealth.wallet.toLocaleString()}`;
-        document.querySelectorAll('.economy-item')[1].querySelector('.economy-value').textContent = `$${wealth.bank.toLocaleString()}`;
-
-        // Fetch inventory
-        const dataResp = await fetch(`https://tycoon-2epova.users.cfx.re/data/${uid}`, {
-            headers: {
-                'X-Tycoon-Key': privateKey
-            }
-        });
-
-        if (!dataResp.ok) throw new Error('Failed to fetch inventory');
-        const data = await dataResp.json();
-        const inventory = data.data?.inventory || {};
-
-        if (Object.keys(inventory).length === 0) {
-            document.querySelector('.inventory-area').textContent = 'Empty';
-        } else {
-            const items = Object.entries(inventory).map(([item, info]) => {
-                return `${item} x${info.amount}`;
-            }).join(', ');
-            document.querySelector('.inventory-area').textContent = items;
         }
 
-    } catch (err) {
-        console.error(err);
-        alert('Failed to fetch data. Check UID or API key.');
-    }
-});
-</script>
+        input.addEventListener('change', () => {
+            fetchPlayerData(input.value.trim());
+        });
+
+        refreshBtn.addEventListener('click', () => {
+            fetchPlayerData(input.value.trim());
+        });
+
+        // Drag logic
+        const hudWindow = document.getElementById('hudWindow');
+        const hudHeader = document.getElementById('hudHeader');
+
+        let isDragging = false;
+        let offset = { x: 0, y: 0 };
+
+        hudHeader.addEventListener('mousedown', e => {
+            isDragging = true;
+            offset.x = e.clientX - hudWindow.offsetLeft;
+            offset.y = e.clientY - hudWindow.offsetTop;
+            document.body.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            document.body.style.userSelect = 'auto';
+        });
+
+        document.addEventListener('mousemove', e => {
+            if (isDragging) {
+                hudWindow.style.left = `${e.clientX - offset.x}px`;
+                hudWindow.style.top = `${e.clientY - offset.y}px`;
+            }
+        });
+    </script>
+</body>
+</html>
