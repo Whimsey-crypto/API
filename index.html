@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Admin HUD Element</title>
+  <title>Player Admin Tool</title>
   <style>
     html, body {
       margin: 0;
@@ -119,12 +119,14 @@
       flex: 1;
       padding: 4px;
       font-size: 10px;
-      color: #666;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      color: #4169e1;
       font-style: italic;
-      text-align: center;
+      text-align: left;
+      overflow-y: auto;
+    }
+
+    .inventory-area:hover {
+      overflow-y: scroll;
     }
   </style>
 </head>
@@ -158,13 +160,15 @@
   </div>
 
   <script>
-    const privateKey = 'Gb24Kdi5CGVYtQkQxKHlIRyJc0UWH0uG4Tm2M'; // Replace this!
+    const privateKey = 'Gb24Kdi5CGVYtQkQxKHlIRyJc0UWH0uG4Tm2M';
 
     const input = document.querySelector('.uid-input');
     const refreshBtn = document.querySelector('.refresh-btn');
     const moneyEl = document.querySelectorAll('.economy-item')[0].querySelector('.economy-value');
     const bankEl = document.querySelectorAll('.economy-item')[1].querySelector('.economy-value');
     const inventoryEl = document.querySelector('.inventory-area');
+
+    let autoRefreshInterval = null;
 
     async function fetchPlayerData(uid) {
       if (!uid) return;
@@ -192,7 +196,9 @@
         if (Object.keys(inventory).length === 0) {
           inventoryEl.textContent = 'Empty';
         } else {
-          const items = Object.entries(inventory).map(([item, info]) => `${item} x${info.amount}`).join(', ');
+          const items = Object.entries(inventory)
+            .map(([item, info]) => `${item} x${info.amount}`)
+            .join(', ');
           inventoryEl.textContent = items;
         }
 
@@ -204,8 +210,18 @@
       }
     }
 
+    function startAutoRefresh() {
+      clearInterval(autoRefreshInterval);
+      const uid = input.value.trim();
+      if (!uid) return;
+      autoRefreshInterval = setInterval(() => {
+        fetchPlayerData(uid);
+      }, 30000);
+    }
+
     input.addEventListener('change', () => {
       fetchPlayerData(input.value.trim());
+      startAutoRefresh();
     });
 
     refreshBtn.addEventListener('click', () => {
