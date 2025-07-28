@@ -174,7 +174,7 @@
       inventoryEl.textContent = 'Loading...';
 
       try {
-        const wealthResp = await fetch(`https://tycoon-2epova.users.cfx.re/wealth/${uid}`, {
+        const wealthResp = await fetch(`https://tycoon-2epova.users.cfx.re/status/wealth/${uid}`, {
           headers: { 'X-Tycoon-Key': privateKey }
         });
         const wealth = await wealthResp.json();
@@ -182,7 +182,7 @@
         moneyEl.textContent = `$${wealth.wallet?.toLocaleString() ?? 0}`;
         bankEl.textContent = `$${wealth.bank?.toLocaleString() ?? 0}`;
 
-        const dataResp = await fetch(`https://tycoon-2epova.users.cfx.re/data/${uid}`, {
+        const dataResp = await fetch(`https://tycoon-2epova.users.cfx.re/status/data/${uid}`, {
           headers: { 'X-Tycoon-Key': privateKey }
         });
         const data = await dataResp.json();
