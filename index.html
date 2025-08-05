@@ -43,6 +43,19 @@
       display: flex;
       gap: 8px;
     }
+    .resize-handle {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 16px;
+      height: 16px;
+      background: linear-gradient(135deg, #4169e1 60%, #1e3a8a 100%);
+      border-top: 2px solid #4169e1;
+      border-left: 2px solid #4169e1;
+      border-bottom-right-radius: 8px;
+      cursor: se-resize;
+      z-index: 10;
+    } 
 
     .left-half, .right-half {
       width: calc(50% - 4px);
@@ -93,6 +106,22 @@
       background-color: #2748a5;
     }
 
+    .toggle-auto-btn {
+      margin-left: 4px;
+      padding: 4px 6px;
+      background-color: #4169e1;
+      border: none;
+      color: white;
+      font-size: 10px;
+      text-transform: uppercase;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    .toggle-auto-btn:hover {
+      background-color: #2748a5;
+    }
+
     .economy-item {
       display: flex;
       justify-content: space-between;
@@ -135,10 +164,11 @@
     <div class="hud-header" id="hudHeader">Player Admin Tool</div>
     <div class="hud-content">
       <div class="left-half">
-        <div class="uid-section">
-          <div class="uid-label">User ID</div>
-          <input type="text" class="uid-input" placeholder="Enter UID..." />
-          <button class="refresh-btn">Refresh</button>
+    <div class="uid-section">
+      <div class="uid-label">User ID</div>
+      <input type="text" class="uid-input" placeholder="Enter UID..." />
+      <button class="refresh-btn">Refresh</button>
+      <button class="toggle-auto-btn">Auto: Off</button>
         </div>
         <div class="economy-section">
           <div class="section-title">Economy</div>
@@ -155,6 +185,9 @@
       <div class="right-half">
         <div class="section-title">Inventory</div>
         <div class="inventory-area">Empty</div>
+        <button class="backpack-btn" style="margin-top:4px;padding:4px 6px;background-color:#4169e1;border:none;color:white;font-size:10px;text-transform:uppercase;border-radius:3px;cursor:pointer;">View Backpack</button>
+        <button class="back-btn" style="margin-top:4px;padding:4px 6px;background-color:#2748a5;border:none;color:white;font-size:10px;text-transform:uppercase;border-radius:3px;cursor:pointer;display:none;">Back to Inventory</button>
+        <div class="resize-handle" id="resizeHandle"></div>
       </div>
     </div>
   </div>
@@ -167,9 +200,22 @@
     const moneyEl = document.querySelectorAll('.economy-item')[0].querySelector('.economy-value');
     const bankEl = document.querySelectorAll('.economy-item')[1].querySelector('.economy-value');
     const inventoryEl = document.querySelector('.inventory-area');
+    const backpackBtn = document.querySelector('.backpack-btn');
+    const backBtn = document.querySelector('.back-btn');
 
     let autoRefreshInterval = null;
+    let isAutoRefresh = false;
+    const toggleAutoBtn = document.querySelector('.toggle-auto-btn');
+    letdragStartX = 0;
+    letdragStartY = 0;
+    
+    let prevInventoryItems = new Set();
+    let prevBackpackItems = new Set();
 
+let prevInventoryQuantities = {};
+let prevBackpackQuantities = {};
+
+    
     async function fetchPlayerData(uid) {
       if (!uid) return;
 
@@ -193,13 +239,68 @@
 
         const inventory = data.data?.inventory || {};
 
+        
+        let itemNameMap = {};
+        async function loadItemNames() {
+          if (localStorage.getItem('itemNameMap')) {
+            itemNameMap = JSON.parse(localStorage.getItem('itemNameMap'));
+            return;
+          }
+          try {
+            const resp = await fetch('iteminfo_2025-07-15.json');
+            const items = await resp.json();
+            items.forEach(entry => {
+              if (entry.data && entry.data.item_id && entry.data.name) {
+                itemNameMap[entry.data.item_id] = entry.data.name.replace(/<[^>]+>/g, '');
+              }
+            });
+            localStorage.setItem('itemNameMap', JSON.stringify(itemNameMap));
+          } catch {}
+        }
+
+        await loadItemNames();
+        
         if (Object.keys(inventory).length === 0) {
           inventoryEl.textContent = 'Empty';
         } else {
-          const items = Object.entries(inventory)
-            .map(([item, info]) => `${item} x${info.amount}`)
-            .join(', ');
-          inventoryEl.textContent = items;
+          const currentItems = new Set(Object.keys(inventory));
+          
+          const itemEntries = Object.entries(inventory).map(([item, info]) => {
+            let displayName = itemNameMap[item] || item;
+            if (displayName.toLowerCase().includes('exp bonus') || displayName.toLowerCase().includes('expboost')) {
+              displayName = displayName.replace(/&#37/g, '%');
+            }
+            let color = '';
+            let highlightType = '';
+            if (!prevInventoryItems.has(item)) {
+              color = '#ffe600'; // new item
+              highlightType = 'new';
+            } else if (prevInventoryQuantities[item] !== undefined) {
+              if (info.amount > prevInventoryQuantities[item]) {
+                color = '#39ff14'; // quantity increased
+                highlightType = 'increased';
+              } else if (info.amount < prevInventoryQuantities[item]) {
+                color = '#ff3939'; // quantity decreased
+                highlightType = 'decreased';
+              }
+            }
+            return {
+              html: color ? `<span style=\"color: ${color};\">${displayName} x${info.amount}</span>` : `${displayName} x${info.amount}`,
+              highlightType
+            };
+          });
+          
+          itemEntries.sort((a, b) => {
+            const order = { new: 0, increased: 0, decreased: 0, '': 1 };
+            return order[a.highlightType] - order[b.highlightType];
+          });
+          inventoryEl.innerHTML = itemEntries.map(e => e.html).join('<br>');
+          prevInventoryItems = currentItems;
+          
+          prevInventoryQuantities = {};
+          Object.entries(inventory).forEach(([item, info]) => {
+            prevInventoryQuantities[item] = info.amount;
+          });
         }
 
       } catch (err) {
@@ -210,25 +311,186 @@
       }
     }
 
-    function startAutoRefresh() {
-      clearInterval(autoRefreshInterval);
+    
+    backpackBtn.addEventListener('click', async () => {
       const uid = input.value.trim();
-      if (!uid) return;
-      autoRefreshInterval = setInterval(() => {
-        fetchPlayerData(uid);
-      }, 30000);
+      if (!uid) {
+        inventoryEl.textContent = 'Enter a UID first.';
+        return;
+      }
+      inventoryEl.textContent = 'Loading backpack...';
+      backpackBtn.style.display = 'none';
+      backBtn.style.display = '';
+     
+      document.querySelectorAll('.section-title')[1].textContent = 'Backpack';
+      try {
+        const backpackResp = await fetch(`https://tycoon-2epova.users.cfx.re/status/chest/u${uid}backpack`, {
+          headers: { 'X-Tycoon-Key': privateKey }
+        });
+        const backpackData = await backpackResp.json();
+        const backpackInv = backpackData.data || {};
+        
+        
+
+        
+
+        let itemNameMap = {};
+        if (localStorage.getItem('itemNameMap')) {
+          itemNameMap = JSON.parse(localStorage.getItem('itemNameMap'));
+        }
+
+        if (Object.keys(backpackInv).length === 0) {
+          inventoryEl.textContent = 'Backpack is empty.';
+        } else {
+          const currentItems = new Set(Object.keys(backpackInv));
+          
+          const itemEntries = Object.entries(backpackInv).map(([item, info]) => {
+            let displayName = itemNameMap[item] || item;
+            if (displayName.toLowerCase().includes('exp bonus') || displayName.toLowerCase().includes('expboost')) {
+              displayName = displayName.replace(/&#37/g, '%');
+            }
+            let color = '';
+            let highlightType = '';
+            if (!prevBackpackItems.has(item)) {
+              color = '#ffe600'; // new item#ffe600
+              highlightType = 'new';
+            } else if (prevBackpackQuantities[item] !== undefined) {
+              if (info.amount > prevBackpackQuantities[item]) {
+                color = '#39ff14'; //colour for increased quantity
+                highlightType = 'increased';
+              } else if (info.amount < prevBackpackQuantities[item]) {
+                color = '#ff3939'; //colour for quanity decreased
+                highlightType = 'decreased';
+              }
+            }
+            return {
+              html: color ? `<span style=\"color: ${color};\">${displayName} x${info.amount}</span>` : `${displayName} x${info.amount}`,
+              highlightType
+            };
+          });
+        
+          itemEntries.sort((a, b) => {
+            const order = { new: 0, increased: 0, decreased: 0, '': 1 };
+            return order[a.highlightType] - order[b.highlightType];
+          });
+          inventoryEl.innerHTML = itemEntries.map(e => e.html).join('<br>');
+          prevBackpackItems = currentItems;
+         
+          prevBackpackQuantities = {};
+          Object.entries(backpackInv).forEach(([item, info]) => {
+            prevBackpackQuantities[item] = info.amount;
+          });
+        }
+      } catch (err) {
+        inventoryEl.textContent = 'Error loading backpack.';
+      }
+    });
+
+    backBtn.addEventListener('click', async () => {
+      backpackBtn.style.display = '';
+      backBtn.style.display = 'none';
+      
+      document.querySelectorAll('.section-title')[1].textContent = 'Inventory';
+      const uid = input.value.trim();
+      await fetchPlayerData(uid);
+    });
+
+    function setAutoRefresh(on) {
+      clearInterval(autoRefreshInterval);
+      isAutoRefresh = on;
+      toggleAutoBtn.textContent = 'Auto: ' + (on ? 'On' : 'Off');
+      if (on) {
+        const uid = input.value.trim();
+        if (!uid) return;
+        autoRefreshInterval = setInterval(() => {
+          fetchPlayerData(uid);
+        }, 30000);
+      }
     }
 
+    toggleAutoBtn.addEventListener('click', () => {
+      setAutoRefresh(!isAutoRefresh);
+    });
+
     input.addEventListener('change', () => {
-      fetchPlayerData(input.value.trim());
-      startAutoRefresh();
+      
+      if (!isAutoRefresh) {
+        fetchPlayerData(input.value.trim());
+      }
     });
 
-    refreshBtn.addEventListener('click', () => {
-      fetchPlayerData(input.value.trim());
-    });
+refreshBtn.addEventListener('click', () => {
+  const uid = input.value.trim();
+  
+  if (backBtn.style.display !== 'none') {
+  
+    inventoryEl.textContent = 'Loading backpack...';
+    backpackBtn.style.display = 'none';
+    backBtn.style.display = '';
+    document.querySelectorAll('.section-title')[1].textContent = 'Backpack';
+    (async () => {
+      try {
+        const backpackResp = await fetch(`https://tycoon-2epova.users.cfx.re/status/chest/u${uid}backpack`, {
+          headers: { 'X-Tycoon-Key': privateKey }
+        });
+        const backpackData = await backpackResp.json();
+        const backpackInv = backpackData.data || {};
+        let itemNameMap = {};
+        if (localStorage.getItem('itemNameMap')) {
+          itemNameMap = JSON.parse(localStorage.getItem('itemNameMap'));
+        }
+        if (Object.keys(backpackInv).length === 0) {
+          inventoryEl.textContent = 'Backpack is empty.';
+        } else {
+          const currentItems = new Set(Object.keys(backpackInv));
+         
+          const itemEntries = Object.entries(backpackInv).map(([item, info]) => {
+            let displayName = itemNameMap[item] || item;
+            if (displayName.toLowerCase().includes('exp bonus') || displayName.toLowerCase().includes('expboost')) {
+              displayName = displayName.replace(/&#37/g, '%');
+            }
+            let color = '';
+            let highlightType = '';
+            if (!prevBackpackItems.has(item)) {
+              color = '#ffe600'; // new item
+              highlightType = 'new';
+            } else if (prevBackpackQuantities[item] !== undefined) {
+              if (info.amount > prevBackpackQuantities[item]) {
+                color = '#39ff14'; // quantity increased
+                highlightType = 'increased';
+              } else if (info.amount < prevBackpackQuantities[item]) {
+                color = '#ff3939'; // quantity decreased
+                highlightType = 'decreased';
+              }
+            }
+            return {
+              html: color ? `<span style=\"color: ${color};\">${displayName} x${info.amount}</span>` : `${displayName} x${info.amount}`,
+              highlightType
+            };
+          });
+         
+          itemEntries.sort((a, b) => {
+            const order = { new: 0, increased: 0, decreased: 0, '': 1 };
+            return order[a.highlightType] - order[b.highlightType];
+          });
+          inventoryEl.innerHTML = itemEntries.map(e => e.html).join('<br>');
+          prevBackpackItems = currentItems;
+          
+          prevBackpackQuantities = {};
+          Object.entries(backpackInv).forEach(([item, info]) => {
+            prevBackpackQuantities[item] = info.amount;
+          });
+        }
+      } catch (err) {
+        inventoryEl.textContent = 'Error loading backpack.';
+      }
+    })();
+  } else {
+    fetchPlayerData(uid);
+  }
+});
 
-    // Drag logic
+   
     const hudWindow = document.getElementById('hudWindow');
     const hudHeader = document.getElementById('hudHeader');
     let isDragging = false;
@@ -242,7 +504,15 @@
     });
 
     document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        
+        localStorage.setItem('hudWindowPosition', JSON.stringify({
+          left: hudWindow.style.left,
+          top: hudWindow.style.top
+        }));
+      }
       isDragging = false;
+      isResizing = false;
       document.body.style.userSelect = 'auto';
     });
 
@@ -252,6 +522,81 @@
         hudWindow.style.top = `${e.clientY - offset.y}px`;
       }
     });
+
+    const resizeHandle = document.getElementById('resizeHandle');
+    let isResizing = false;
+    let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
+    let isOverResizeHandle = false;
+
+    
+    const savedSize = localStorage.getItem('hudWindowSize');
+    if (savedSize) {
+      try {
+        const { width, height } = JSON.parse(savedSize);
+        if (width && height) {
+          hudWindow.style.width = width + 'px';
+          hudWindow.style.height = height + 'px';
+        }
+      } catch {}
+    }
+
+    
+    const savedPosition = localStorage.getItem('hudWindowPosition');
+    if (savedPosition) {
+      try {
+        const { left, top } = JSON.parse(savedPosition);
+        if (left && top) {
+          hudWindow.style.left = left;
+          hudWindow.style.top = top;
+        }
+      } catch {}
+    }
+
+    resizeHandle.addEventListener('mousedown', e => {
+      isResizing = true;
+      resizeStart.x = e.clientX;
+      resizeStart.y = e.clientY;
+      resizeStart.width = hudWindow.offsetWidth;
+      resizeStart.height = hudWindow.offsetHeight;
+      document.body.style.userSelect = 'none';
+      e.stopPropagation();
+    });
+
+    resizeHandle.addEventListener('mouseenter', () => {
+      isOverResizeHandle = true;
+    });
+    resizeHandle.addEventListener('mouseleave', () => {
+      isOverResizeHandle = false;
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (isResizing) {
+        let newWidth = Math.max(200, resizeStart.width + (e.clientX - resizeStart.x));
+        let newHeight = Math.max(120, resizeStart.height + (e.clientY - resizeStart.y));
+        hudWindow.style.width = newWidth + 'px';
+        hudWindow.style.height = newHeight + 'px';
+        
+        localStorage.setItem('hudWindowSize', JSON.stringify({ width: newWidth, height: newHeight }));
+      } else if (isDragging && !isOverResizeHandle) {
+        hudWindow.style.left = `${e.clientX - offset.x}px`;
+        hudWindow.style.top = `${e.clientY - offset.y}px`;
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+      isResizing = false;
+      document.body.style.userSelect = 'auto';
+    });
+
+    hudHeader.addEventListener('mousedown', e => {
+      if (isOverResizeHandle) return;
+      isDragging = true;
+      offset.x = e.clientX - hudWindow.offsetLeft;
+      offset.y = e.clientY - hudWindow.offsetTop;
+      document.body.style.userSelect = 'none';
+    });
+    
   </script>
 </body>
 </html>
