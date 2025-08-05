@@ -206,6 +206,33 @@
     let autoRefreshInterval = null;
     let isAutoRefresh = false;
     const toggleAutoBtn = document.querySelector('.toggle-auto-btn');
+    
+    
+const autoRefreshInput = document.createElement('input');
+autoRefreshInput.type = 'number';
+autoRefreshInput.min = '5';
+autoRefreshInput.value = '30';
+autoRefreshInput.style.width = '50px';
+autoRefreshInput.style.marginLeft = '4px';
+autoRefreshInput.style.fontSize = '10px';
+autoRefreshInput.style.background = 'rgba(65, 105, 225, 0.1)';
+autoRefreshInput.style.border = '1px solid #4169e1';
+autoRefreshInput.style.color = '#fff';
+autoRefreshInput.style.borderRadius = '3px';
+autoRefreshInput.title = 'Auto refresh interval (seconds)';
+toggleAutoBtn.parentNode.insertBefore(autoRefreshInput, toggleAutoBtn.nextSibling);
+
+let autoRefreshSeconds = 30;
+autoRefreshInput.addEventListener('change', () => {
+  let val = parseInt(autoRefreshInput.value);
+  if (isNaN(val) || val < 5) val = 5;
+  autoRefreshInput.value = val;
+  autoRefreshSeconds = val;
+  if (isAutoRefresh) {
+    setAutoRefresh(true);
+  }
+});
+
     letdragStartX = 0;
     letdragStartY = 0;
     
@@ -404,7 +431,7 @@ let prevBackpackQuantities = {};
         if (!uid) return;
         autoRefreshInterval = setInterval(() => {
           fetchPlayerData(uid);
-        }, 30000);
+        }, autoRefreshSeconds * 1000);
       }
     }
 
